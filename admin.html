@@ -1,0 +1,113 @@
+<!-- vue -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Page - Entries</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="vue2.js"></script>
+</head>
+<body>
+<div id="app" class="container">
+    <h3>Uploaded Entries</h3>
+    <div class="cols-5">
+        <div class="span-3">
+            <table>
+                <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Date of Birth</th>
+                    <th>Phone</th>
+                    <th>Aadhaar</th>
+                    <th>State</th>
+                    <th>Gas ID</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody>
+                <tr v-for="entry in entries" :key="entry.id">
+                    <td>{{ entry.name }}</td>
+                    <td>{{ entry.dob }}</td>
+                    <td>{{ entry.phone }}</td>
+                    <td>{{ entry.aadhaar }}</td>
+                    <td>{{ entry.state }}</td>
+                    <td>{{ entry.gasId }}</td>
+                    <td>
+                        <a class="btn-outline" :href="entry.file_url" target="_blank">View PDF</a>
+                        <a class="btn" @click="verify(entry)">Verify</a>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="span-2" v-if="file_url">
+            <embed :src="file_url+'#toolbar=0&navpanes=0&scrollbar=0'" height="100%" width="100%"/>
+            <div v-if="pdf_sign_details">
+                <div class="cols-4 gap-5 pad-10" v-for="(sig,idx) in pdf_sign_details.signatures" :key="`sig_${idx}`">
+                    <div class="span-4">
+                        {{
+                            `${sig.meta.signatureMeta.name}, ${sig.meta.signatureMeta.contactInfo}, ${sig.meta.signatureMeta.location},  ${sig.meta.signatureMeta.reason}`
+                        }}
+                    </div>
+                    <div class="item">{{ sig.authenticity ? '✅' : '❌' }} Authenticity</div>
+                    <div class="item">{{ !sig.expired ? '✅' : '❌' }} Valid</div>
+                    <div class="item">{{ sig.integrity ? '✅' : '❌' }} Integrity</div>
+                    <div class="item">{{ sig.verified ? '✅' : '❌' }} Verified</div>
+                </div>
+            </div>
+            <div class="flex flex-center" v-else>
+                <div>
+                    ❌ Error getting pdf signature
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import {ApiClient, PDFUtil, CertUtils} from './dist/modules.js';
+
+    new Vue({
+        el: '#app',
+        data: {
+            entries: [],
+            pdf_sign_details: undefined,
+            file_url: undefined,
+        },
+        async created() {
+            const client = new ApiClient();
+            try {
+                this.entries = await client.getEntries();
+            } catch (error) {
+                console.error('Error fetching entries:', error);
+            }
+        },
+        methods: {
+            async verify(entry) {
+                try {
+                    this.file_url = entry.file_url;
+                    let {
+                        authenticity,
+                        certs,
+                        expired,
+                        integrity,
+                        signatures,
+                        verified
+                    } = await PDFUtil.getPDFSignature(entry.file_url);
+                    this.pdf_sign_details = {authenticity, certs, expired, integrity, signatures, verified};
+                    console.log(this.pdf_sign_details);
+                    let cert = CertUtils.parsePEM(signatures[0].meta.certs[0].pemCertificate);
+                    let verification = CertUtils.verifyCertificate(cert);
+                    return verification
+
+                } catch (e) {
+                    console.error(e);
+                    this.pdf_sign_details = null;
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>

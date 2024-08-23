@@ -1,0 +1,160 @@
+<!-- vue -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self Declaration Form</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="vue2.js"></script>
+</head>
+<body>
+<div id="app" class="container">
+    <h3>Self Declaration Form</h3>
+    <div class="cols-5">
+        <form class="span-3 cols-3" @submit.prevent="submitForm">
+            <div class="form-group span-3">
+                <label for="name">Name:</label>
+                <input type="text" id="name" v-model="formData.name" required>
+            </div>
+            <div class="form-group span-2">
+                <label for="photo">Passport Size Photo (JPEG, max 100KB):</label>
+                <input type="file" id="photo" ref="photoFile" accept="image/jpeg" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="dob">Date of Birth:</label>
+                <input type="date" id="dob" v-model="formData.dob" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="phone">Phone:</label>
+                <input type="tel" id="phone" v-model="formData.phone" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="aadhaar">Aadhaar Number:</label>
+                <input type="text" id="aadhaar" v-model="formData.aadhaar" pattern="[0-9]{12}" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="state">State:</label>
+                <input type="text" id="state" v-model="formData.state" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="gasId">Gas ID:</label>
+                <input type="text" id="gasId" v-model="formData.gasId" required>
+            </div>
+            <div class="form-group span-1">
+                <label for="DeigitalSignature">Digital Signature:</label>
+                <input type="checkbox" id="DeigitalSignature" v-model="doSign">
+            </div>
+            <br>
+            <div class="form-group span-1">
+                <button class="btn" type="submit">Submit Form</button>
+            </div>
+        </form>
+        <div  class="span-2" id="pdfViewer">
+            <embed v-if="pdfUrl" :src="pdfUrl+'#toolbar=0&navpanes=0&scrollbar=0'" :type="pdfType" height="100%"
+                   width="100%"/>
+        </div>
+    </div>
+    <div class="status">
+        <h3 v-if="statusMessage">{{ statusMessage }}</h3>
+    </div>
+</div>
+
+<script type="module">
+    import {ApiClient, PDFUtil} from "./dist/modules.js";
+
+    new Vue({
+        el: '#app',
+        data() {
+            return {
+                formData: {
+                    name: 'John Doe',
+                    dob: '1990-01-01',
+                    phone: '1234567890',
+                    gasId: 'GAS123456',
+                    aadhaar: '123456789012',
+                    state: 'Delhi'
+                },
+                pdfUrl: '',
+                pdfType: '',
+                statusMessage: '',
+                doSign: false,
+            };
+        },
+        methods: {
+            async submitForm() {
+                const formData = new FormData();
+                formData.append('name', this.formData.name);
+                formData.append('dob', this.formData.dob);
+                formData.append('phone', this.formData.phone);
+                formData.append('gasId', this.formData.gasId);
+                formData.append('aadhaar', this.formData.aadhaar);
+                formData.append('state', this.formData.state);
+                formData.append('photo', this.$refs.photoFile.files[0]);
+
+                // Validate photo size
+                const photoFile = this.$refs.photoFile.files[0];
+                if (photoFile.size > 100 * 1024) {
+                    alert('Photo size exceeds 100KB limit');
+                    return;
+                }
+
+                try {
+                    // Generate PDF
+                    let pdf = await PDFUtil.createPDF(this.formData, photoFile);
+                    this.previewPDF(pdf);
+
+
+                    // Sign and upload PDF
+                    if (this.doSign) {
+                        pdf = await this.signPDF(pdf);
+                    }
+
+
+                    const client = new ApiClient();
+                    const resp = await client.upload(this.formData, pdf);
+                    this.formSuccess(true);
+                } catch (error) {
+                    console.error('Error submitting form:', error);
+                    this.formSuccess(false);
+                }
+            },
+            async signPDF(pdf) {
+                return new Promise((resolve, reject) => {
+                    window.addEventListener('message', (event) => {
+                        if (event.data.name === 'signedPDFBlob') {
+                            if (event.data.success) {
+                                resolve(event.data.blob);
+                            } else {
+                                reject(event.data.msg);
+                            }
+                        }
+                        if (event.data.name === 'PDFBlobProcessStatus') {
+                            if (event.data.success) {
+                                // resolve(event.data.msg);
+                            } else {
+                                reject(event.data.msg);
+                            }
+                        }
+                    });
+
+                    window.postMessage({
+                        name: 'signPDF',
+                        blob: pdf,
+                    }, '*');
+                });
+            },
+            previewPDF(blob) {
+                this.pdfUrl = URL.createObjectURL(blob);
+                this.pdfType = blob.type;
+            },
+            formSuccess(success) {
+                this.statusMessage = success ? '✅ Form Uploaded Successfully' : '❌ Form Uploaded Failed';
+            }
+        }
+    });
+</script>
+
+</body>
+
+</html>
